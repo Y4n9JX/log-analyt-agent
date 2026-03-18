@@ -12,7 +12,8 @@ from pathlib import Path
 
 DEFAULT_CONFIG = "/etc/log-analyt-agent/config.json"
 STATE_PATH = "/opt/log-analyt-agent/state.json"
-VERSION = "0.2.1"
+VERSION = "0.2.2"
+METRICS_WINDOW_SECONDS = 180
 LOG_PATTERN = re.compile(r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"')
 
 
@@ -100,7 +101,53 @@ def read_cpu_percent(sample_seconds: float = 0.2):
     return round(max(0.0, min(100.0, used_percent)), 1)
 
 
-def heartbeat_payload(config: dict) -> dict:
+def load_state() -> dict:
+    p = Path(STATE_PATH)
+    if not p.exists():
+        return {"files": {}, "metrics": []}
+    try:
+        state = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(state, dict):
+            return {"files": {}, "metrics": []}
+        state.setdefault("files", {})
+        state.setdefault("metrics", [])
+        return state
+    except Exception:
+        return {"files": {}, "metrics": []}
+
+
+def save_state(state: dict) -> None:
+    p = Path(STATE_PATH)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def average_metric(entries: list, key: str):
+    values = [float(item[key]) for item in entries if item.get(key) is not None]
+    if not values:
+        return None
+    return round(sum(values) / len(values), 1)
+
+
+def capture_metrics(state: dict):
+    now_ts = int(time.time())
+    current = {
+        "ts": now_ts,
+        "cpu_percent": read_cpu_percent(),
+        "memory_percent": read_memory_percent(),
+    }
+    metrics = state.setdefault("metrics", [])
+    metrics.append(current)
+    cutoff = now_ts - METRICS_WINDOW_SECONDS
+    state["metrics"] = [item for item in metrics if int(item.get("ts", 0)) >= cutoff]
+    averaged = {
+        "cpu_percent": average_metric(state["metrics"], "cpu_percent"),
+        "memory_percent": average_metric(state["metrics"], "memory_percent"),
+    }
+    return averaged
+
+
+def heartbeat_payload(config: dict, metrics_avg: dict) -> dict:
     return {
         "server_uuid": config["server_uuid"],
         "agent_key": config["agent_key"],
@@ -110,26 +157,10 @@ def heartbeat_payload(config: dict) -> dict:
         "source_type": config.get("source_type", "nginx_access"),
         "parser_name": config.get("parser_name", "nginx_combined"),
         "uptime_seconds": read_uptime_seconds(),
-        "cpu_percent": read_cpu_percent(),
-        "memory_percent": read_memory_percent(),
+        "cpu_percent": metrics_avg.get("cpu_percent"),
+        "memory_percent": metrics_avg.get("memory_percent"),
         "sent_at": now_iso(),
     }
-
-
-def load_state() -> dict:
-    p = Path(STATE_PATH)
-    if not p.exists():
-        return {"files": {}}
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return {"files": {}}
-
-
-def save_state(state: dict) -> None:
-    p = Path(STATE_PATH)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def parse_nginx_time(value: str) -> str:
@@ -220,8 +251,11 @@ def run(config_path: str) -> int:
 
     while True:
         state = load_state()
+        metrics_avg = capture_metrics(state)
+        save_state(state)
+
         try:
-            print(f"[log-analyt-agent] heartbeat ok: {post_json(heartbeat_url, heartbeat_payload(config))}")
+            print(f"[log-analyt-agent] heartbeat ok: {post_json(heartbeat_url, heartbeat_payload(config, metrics_avg))}")
         except urllib.error.HTTPError as e:
             print(f"[log-analyt-agent] heartbeat http_error status={e.code} body={e.read().decode('utf-8', errors='replace')}", file=sys.stderr)
         except Exception as e:
