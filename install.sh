@@ -79,7 +79,7 @@ prompt_if_missing() {
 
   if [[ -z "$CENTER_URL" ]]; then
     interactive=1
-    read -rp "请输入中心站地址 (如 https://tglog.99sla.de): " CENTER_URL
+    read -rp "请输入中心站地址 (如 https://your-domain.example): " CENTER_URL
   fi
   if [[ -z "$SERVER_UUID" ]]; then
     interactive=1
@@ -318,4 +318,4 @@ echo "[log-analyt-agent] install ok"
 echo "install_dir=$INSTALL_DIR"
 echo "config=$CONFIG_DIR/config.json"
 echo "commands: laa (menu) | laa status | laa restart | laa logs | laa update | laa uninstall"
-echo "quick install: curl -L https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o agent.sh && chmod +x agent.sh && LOGANALYT_CENTER_URL=... LOGANALYT_SERVER_UUID=... LOGANALYT_AGENT_KEY=... ./agent.sh"
+echo "quick install: curl -L https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o agent.sh && chmod +x agent.sh && LOGANALYT_CENTER_URL=https://your-domain.example LOGANALYT_SERVER_UUID=... LOGANALYT_AGENT_KEY=... ./agent.sh"
