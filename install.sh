@@ -9,30 +9,37 @@ SERVER_UUID=${LOGANALYT_SERVER_UUID:-}
 AGENT_KEY=${LOGANALYT_AGENT_KEY:-}
 
 prompt_if_missing() {
+  local interactive=0
+
   if [[ -z "$CENTER_URL" ]]; then
+    interactive=1
     read -rp "请输入中心站地址 (如 https://tglog.99sla.de): " CENTER_URL
   fi
   if [[ -z "$SERVER_UUID" ]]; then
+    interactive=1
     read -rp "请输入 server_uuid: " SERVER_UUID
   fi
   if [[ -z "$AGENT_KEY" ]]; then
+    interactive=1
     read -rp "请输入 agent_key: " AGENT_KEY
   fi
 
-  echo
-  echo "安装信息确认："
-  echo "- center_url: $CENTER_URL"
-  echo "- server_uuid: $SERVER_UUID"
-  echo "- agent_key: $AGENT_KEY"
-  read -rp "是否继续安装？[Y/n]: " confirm
-  confirm=${confirm:-Y}
-  case "$confirm" in
-    Y|y|yes|YES) ;;
-    *)
-      echo "[log-analyt-agent] cancelled"
-      exit 1
-      ;;
-  esac
+  if [[ "$interactive" -eq 1 ]]; then
+    echo
+    echo "安装信息确认："
+    echo "- center_url: $CENTER_URL"
+    echo "- server_uuid: $SERVER_UUID"
+    echo "- agent_key: $AGENT_KEY"
+    read -rp "是否继续安装？[Y/n]: " confirm
+    confirm=${confirm:-Y}
+    case "$confirm" in
+      Y|y|yes|YES) ;;
+      *)
+        echo "[log-analyt-agent] cancelled"
+        exit 1
+        ;;
+    esac
+  fi
 }
 
 for arg in "$@"; do
