@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import platform
 import re
 import socket
@@ -12,7 +13,7 @@ from pathlib import Path
 
 DEFAULT_CONFIG = "/etc/log-analyt-agent/config.json"
 STATE_PATH = "/opt/log-analyt-agent/state.json"
-VERSION = "0.2.2"
+VERSION = "0.2.3"
 METRICS_WINDOW_SECONDS = 180
 LOG_PATTERN = re.compile(r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"')
 
@@ -52,6 +53,22 @@ def read_uptime_seconds():
             return int(float(f.read().split()[0]))
     except Exception:
         return None
+
+
+def read_load_average():
+    try:
+        values = os.getloadavg()
+        return {
+            'load1': round(float(values[0]), 2),
+            'load5': round(float(values[1]), 2),
+            'load15': round(float(values[2]), 2),
+        }
+    except Exception:
+        return {
+            'load1': None,
+            'load5': None,
+            'load15': None,
+        }
 
 
 def read_memory_percent():
@@ -148,6 +165,7 @@ def capture_metrics(state: dict):
 
 
 def heartbeat_payload(config: dict, metrics_avg: dict) -> dict:
+    loadavg = read_load_average()
     return {
         "server_uuid": config["server_uuid"],
         "agent_key": config["agent_key"],
@@ -159,6 +177,9 @@ def heartbeat_payload(config: dict, metrics_avg: dict) -> dict:
         "uptime_seconds": read_uptime_seconds(),
         "cpu_percent": metrics_avg.get("cpu_percent"),
         "memory_percent": metrics_avg.get("memory_percent"),
+        "load1": loadavg.get("load1"),
+        "load5": loadavg.get("load5"),
+        "load15": loadavg.get("load15"),
         "sent_at": now_iso(),
     }
 
