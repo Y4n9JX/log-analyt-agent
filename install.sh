@@ -10,6 +10,7 @@ AGENT_KEY=${LOGANALYT_AGENT_KEY:-}
 
 prompt_if_missing() {
   local interactive=0
+  local force_non_interactive=${LOGANALYT_NON_INTERACTIVE:-0}
 
   if [[ -z "$CENTER_URL" ]]; then
     interactive=1
@@ -24,7 +25,7 @@ prompt_if_missing() {
     read -rp "请输入 agent_key: " AGENT_KEY
   fi
 
-  if [[ "$interactive" -eq 1 ]]; then
+  if [[ "$interactive" -eq 1 && "$force_non_interactive" != "1" ]]; then
     echo
     echo "安装信息确认："
     echo "- center_url: $CENTER_URL"
@@ -147,7 +148,7 @@ show_menu() {
         curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o "$tmpdir/install.sh"
         curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/main.py -o "$tmpdir/main.py"
         chmod +x "$tmpdir/install.sh"
-        env LOGANALYT_CENTER_URL=$(python3 - <<'PYC'
+        env LOGANALYT_NON_INTERACTIVE=1 LOGANALYT_CENTER_URL=$(python3 - <<'PYC'
 import json
 print(json.load(open('/etc/log-analyt-agent/config.json'))['center_url'])
 PYC
@@ -195,7 +196,7 @@ case "$cmd" in
     tmpdir=$(mktemp -d)
     curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o "$tmpdir/install.sh"
     chmod +x "$tmpdir/install.sh"
-    env LOGANALYT_CENTER_URL=$(python3 - <<'PYC'
+    env LOGANALYT_NON_INTERACTIVE=1 LOGANALYT_CENTER_URL=$(python3 - <<'PYC'
 import json
 print(json.load(open('/etc/log-analyt-agent/config.json'))['center_url'])
 PYC
