@@ -30,7 +30,11 @@ def post_json(url: str, payload: dict, timeout: int = 10) -> dict:
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": f"Log-Analyt-Agent/{VERSION}",
+        },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
