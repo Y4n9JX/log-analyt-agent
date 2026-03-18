@@ -57,11 +57,12 @@ def read_uptime_seconds():
 
 def read_load_average():
     try:
-        values = os.getloadavg()
+        with open('/proc/loadavg', 'r', encoding='utf-8') as f:
+            parts = f.read().strip().split()
         return {
-            'load1': round(float(values[0]), 2),
-            'load5': round(float(values[1]), 2),
-            'load15': round(float(values[2]), 2),
+            'load1': round(float(parts[0]), 2),
+            'load5': round(float(parts[1]), 2),
+            'load15': round(float(parts[2]), 2),
         }
     except Exception:
         return {
