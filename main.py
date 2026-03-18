@@ -242,8 +242,12 @@ def collect_events(config: dict, state: dict) -> list:
             continue
 
         key = str(path)
-        prev_offset = int(files_state.get(key, 0))
         current_size = path.stat().st_size
+        if key not in files_state:
+            files_state[key] = current_size
+            continue
+
+        prev_offset = int(files_state.get(key, 0))
         if prev_offset > current_size:
             prev_offset = 0
 
