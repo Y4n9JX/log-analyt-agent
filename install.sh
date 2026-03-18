@@ -63,8 +63,48 @@ chmod +x "$INSTALL_DIR/agent.sh"
 cat > /usr/local/bin/laa <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-cmd=${1:-status}
+
+show_menu() {
+  while true; do
+    clear
+    echo "=============================="
+    echo "   Log-Analyt Agent Manager"
+    echo "=============================="
+    echo "1) Status"
+    echo "2) Start"
+    echo "3) Stop"
+    echo "4) Restart"
+    echo "5) Logs"
+    echo "6) Uninstall"
+    echo "0) Exit"
+    echo
+    read -rp "Select: " choice
+    case "$choice" in
+      1) systemctl status log-analyt-agent --no-pager; read -rp "Press Enter to continue..." ;;
+      2) systemctl start log-analyt-agent; echo "started"; read -rp "Press Enter to continue..." ;;
+      3) systemctl stop log-analyt-agent; echo "stopped"; read -rp "Press Enter to continue..." ;;
+      4) systemctl restart log-analyt-agent; echo "restarted"; read -rp "Press Enter to continue..." ;;
+      5) journalctl -u log-analyt-agent -n 100 --no-pager; read -rp "Press Enter to continue..." ;;
+      6)
+        if [[ -x /tmp/log-analyt-agent/uninstall.sh ]]; then
+          /tmp/log-analyt-agent/uninstall.sh
+        elif [[ -x ./uninstall.sh ]]; then
+          ./uninstall.sh
+        else
+          echo "uninstall.sh not found; download it from log-analyt-agent repo" >&2
+          exit 1
+        fi
+        exit 0
+        ;;
+      0) exit 0 ;;
+      *) echo "Invalid choice"; sleep 1 ;;
+    esac
+  done
+}
+
+cmd=${1:-menu}
 case "$cmd" in
+  menu) show_menu ;;
   start) systemctl start log-analyt-agent ;;
   stop) systemctl stop log-analyt-agent ;;
   restart) systemctl restart log-analyt-agent ;;
@@ -81,7 +121,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "Usage: laa {start|stop|restart|status|logs|uninstall}" >&2
+    echo "Usage: laa {menu|start|stop|restart|status|logs|uninstall}" >&2
     exit 1
     ;;
 esac
@@ -115,4 +155,4 @@ fi
 echo "[log-analyt-agent] install ok"
 echo "install_dir=$INSTALL_DIR"
 echo "config=$CONFIG_DIR/config.json"
-echo "commands: laa status | laa restart | laa logs | laa uninstall"
+echo "commands: laa (menu) | laa status | laa restart | laa logs | laa uninstall"
