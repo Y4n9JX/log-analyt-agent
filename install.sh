@@ -84,7 +84,10 @@ show_menu() {
     echo "5. laa logs"
     echo "   看最近日志"
     echo
-    echo "6. laa uninstall"
+    echo "6. laa update"
+    echo "   更新 agent"
+    echo
+    echo "7. laa uninstall"
     echo "   卸载 agent"
     echo
     echo "0. 退出"
@@ -97,6 +100,28 @@ show_menu() {
       4) systemctl status log-analyt-agent --no-pager; read -rp "按回车继续..." ;;
       5) journalctl -u log-analyt-agent -n 100 --no-pager; read -rp "按回车继续..." ;;
       6)
+        tmpdir=$(mktemp -d)
+        curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o "$tmpdir/install.sh"
+        curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/main.py -o "$tmpdir/main.py"
+        chmod +x "$tmpdir/install.sh"
+        env LOGANALYT_CENTER_URL=$(python3 - <<'PYC'
+import json
+print(json.load(open('/etc/log-analyt-agent/config.json'))['center_url'])
+PYC
+) LOGANALYT_SERVER_UUID=$(python3 - <<'PYC'
+import json
+print(json.load(open('/etc/log-analyt-agent/config.json'))['server_uuid'])
+PYC
+) LOGANALYT_AGENT_KEY=$(python3 - <<'PYC'
+import json
+print(json.load(open('/etc/log-analyt-agent/config.json'))['agent_key'])
+PYC
+) bash "$tmpdir/install.sh"
+        rm -rf "$tmpdir"
+        echo "已更新"
+        read -rp "按回车继续..."
+        ;;
+      7)
         if [[ -x /tmp/log-analyt-agent/uninstall.sh ]]; then
           /tmp/log-analyt-agent/uninstall.sh
         elif [[ -x ./uninstall.sh ]]; then
@@ -121,6 +146,26 @@ case "$cmd" in
   restart) systemctl restart log-analyt-agent ;;
   status) systemctl status log-analyt-agent --no-pager ;;
   logs) journalctl -u log-analyt-agent -n 100 --no-pager ;;
+  update)
+    tmpdir=$(mktemp -d)
+    curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o "$tmpdir/install.sh"
+    curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/main.py -o "$tmpdir/main.py"
+    chmod +x "$tmpdir/install.sh"
+    env LOGANALYT_CENTER_URL=$(python3 - <<'PYC'
+import json
+print(json.load(open('/etc/log-analyt-agent/config.json'))['center_url'])
+PYC
+) LOGANALYT_SERVER_UUID=$(python3 - <<'PYC'
+import json
+print(json.load(open('/etc/log-analyt-agent/config.json'))['server_uuid'])
+PYC
+) LOGANALYT_AGENT_KEY=$(python3 - <<'PYC'
+import json
+print(json.load(open('/etc/log-analyt-agent/config.json'))['agent_key'])
+PYC
+) bash "$tmpdir/install.sh"
+    rm -rf "$tmpdir"
+    ;;
   uninstall)
     if [[ -x /tmp/log-analyt-agent/uninstall.sh ]]; then
       /tmp/log-analyt-agent/uninstall.sh
@@ -132,7 +177,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "Usage: laa {menu|start|stop|restart|status|logs|uninstall}" >&2
+    echo "Usage: laa {menu|start|stop|restart|status|logs|update|uninstall}" >&2
     exit 1
     ;;
 esac
@@ -166,4 +211,4 @@ fi
 echo "[log-analyt-agent] install ok"
 echo "install_dir=$INSTALL_DIR"
 echo "config=$CONFIG_DIR/config.json"
-echo "commands: laa (menu) | laa status | laa restart | laa logs | laa uninstall"
+echo "commands: laa (menu) | laa status | laa restart | laa logs | laa update | laa uninstall"
