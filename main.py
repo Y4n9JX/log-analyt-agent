@@ -277,7 +277,9 @@ def run(config_path: str) -> int:
         save_state(state)
 
         try:
-            print(f"[log-analyt-agent] heartbeat ok: {post_json(heartbeat_url, heartbeat_payload(config, metrics_avg))}")
+            heartbeat_response = post_json(heartbeat_url, heartbeat_payload(config, metrics_avg))
+            print(f"[log-analyt-agent] heartbeat ok: {heartbeat_response}")
+            config = merge_watch_paths(config_path, config, heartbeat_response.get("desired_watch", []))
         except urllib.error.HTTPError as e:
             print(f"[log-analyt-agent] heartbeat http_error status={e.code} body={e.read().decode('utf-8', errors='replace')}", file=sys.stderr)
         except Exception as e:
