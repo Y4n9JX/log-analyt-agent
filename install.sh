@@ -7,6 +7,8 @@ SERVICE_NAME=log-analyt-agent
 CENTER_URL=${LOGANALYT_CENTER_URL:-}
 SERVER_UUID=${LOGANALYT_SERVER_UUID:-}
 AGENT_KEY=${LOGANALYT_AGENT_KEY:-}
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+WORK_DIR=${LOGANALYT_WORK_DIR:-/tmp/log-analyt-agent}
 
 prompt_if_missing() {
   local interactive=0
@@ -53,6 +55,7 @@ for arg in "$@"; do
   esac
 done
 
+mkdir -p "$WORK_DIR" "$INSTALL_DIR" "$CONFIG_DIR"
 prompt_if_missing
 
 if [[ -z "$CENTER_URL" || -z "$SERVER_UUID" || -z "$AGENT_KEY" ]]; then
@@ -60,8 +63,6 @@ if [[ -z "$CENTER_URL" || -z "$SERVER_UUID" || -z "$AGENT_KEY" ]]; then
   echo "Need: LOGANALYT_CENTER_URL, LOGANALYT_SERVER_UUID, LOGANALYT_AGENT_KEY"
   exit 1
 fi
-
-mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
 
 cat > "$CONFIG_DIR/config.json" <<EOF
 {
@@ -80,15 +81,15 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-SCRIPT_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main.py"
+SCRIPT_SOURCE="$WORK_DIR/main.py"
 if [[ ! -f "$SCRIPT_SOURCE" ]]; then
-  echo "[log-analyt-agent] main.py not found next to install.sh, downloading..."
+  echo "[log-analyt-agent] downloading main.py..."
   curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/main.py -o "$SCRIPT_SOURCE"
 fi
 
-UNINSTALL_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/uninstall.sh"
+UNINSTALL_SOURCE="$WORK_DIR/uninstall.sh"
 if [[ ! -f "$UNINSTALL_SOURCE" ]]; then
-  echo "[log-analyt-agent] uninstall.sh not found next to install.sh, downloading..."
+  echo "[log-analyt-agent] downloading uninstall.sh..."
   curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/uninstall.sh -o "$UNINSTALL_SOURCE"
   chmod +x "$UNINSTALL_SOURCE"
 fi
@@ -257,4 +258,4 @@ echo "[log-analyt-agent] install ok"
 echo "install_dir=$INSTALL_DIR"
 echo "config=$CONFIG_DIR/config.json"
 echo "commands: laa (menu) | laa status | laa restart | laa logs | laa update | laa uninstall"
-echo "quick install: curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o install.sh && chmod +x install.sh && LOGANALYT_CENTER_URL=... LOGANALYT_SERVER_UUID=... LOGANALYT_AGENT_KEY=... ./install.sh"
+echo "quick install: curl -L https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o agent.sh && chmod +x agent.sh && LOGANALYT_CENTER_URL=... LOGANALYT_SERVER_UUID=... LOGANALYT_AGENT_KEY=... ./agent.sh"
