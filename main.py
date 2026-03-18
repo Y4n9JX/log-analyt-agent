@@ -212,18 +212,22 @@ def parse_nginx_line(line: str, log_file: str, source_type: str):
     if not m:
         return None
     gd = m.groupdict()
-    return {
-        "event_time": parse_nginx_time(gd["time_local"]),
-        "log_file": log_file,
-        "source_type": source_type,
-        "source_ip": gd["source_ip"],
-        "method": gd["method"],
-        "path": gd["path"],
-        "status_code": int(gd["status_code"]),
-        "ua": gd["ua"],
-        "ua_family": infer_ua_family(gd["ua"]),
-        "extra_json": {"referer": gd.get("referer", "")},
-    }
+    try:
+        return {
+            "event_time": parse_nginx_time(gd["time_local"]),
+            "log_file": log_file,
+            "source_type": source_type,
+            "source_ip": gd["source_ip"],
+            "method": gd["method"],
+            "path": gd["path"],
+            "status_code": int(gd["status_code"]),
+            "ua": gd["ua"],
+            "ua_family": infer_ua_family(gd["ua"]),
+            "extra_json": {"referer": gd.get("referer", "")},
+        }
+    except Exception as e:
+        print(f"[log-analyt-agent] skip malformed line in {log_file}: {e}; raw={line.strip()[:240]}", file=sys.stderr)
+        return None
 
 
 def collect_events(config: dict, state: dict) -> list:
