@@ -74,12 +74,19 @@ fi
 
 SCRIPT_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main.py"
 if [[ ! -f "$SCRIPT_SOURCE" ]]; then
-  echo "[log-analyt-agent] main.py not found next to install.sh"
-  echo "Download both install.sh and main.py from GitHub before running install.sh"
-  exit 1
+  echo "[log-analyt-agent] main.py not found next to install.sh, downloading..."
+  curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/main.py -o "$SCRIPT_SOURCE"
+fi
+
+UNINSTALL_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/uninstall.sh"
+if [[ ! -f "$UNINSTALL_SOURCE" ]]; then
+  echo "[log-analyt-agent] uninstall.sh not found next to install.sh, downloading..."
+  curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/uninstall.sh -o "$UNINSTALL_SOURCE"
+  chmod +x "$UNINSTALL_SOURCE"
 fi
 
 install -m 0755 "$SCRIPT_SOURCE" "$INSTALL_DIR/main.py"
+install -m 0755 "$UNINSTALL_SOURCE" "$INSTALL_DIR/uninstall.sh"
 
 cat > "$INSTALL_DIR/agent.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -151,7 +158,9 @@ PYC
         read -rp "按回车继续..."
         ;;
       7)
-        if [[ -x /tmp/log-analyt-agent/uninstall.sh ]]; then
+        if [[ -x /opt/log-analyt-agent/uninstall.sh ]]; then
+          /opt/log-analyt-agent/uninstall.sh
+        elif [[ -x /tmp/log-analyt-agent/uninstall.sh ]]; then
           /tmp/log-analyt-agent/uninstall.sh
         elif [[ -x ./uninstall.sh ]]; then
           ./uninstall.sh
@@ -178,7 +187,6 @@ case "$cmd" in
   update)
     tmpdir=$(mktemp -d)
     curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o "$tmpdir/install.sh"
-    curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/main.py -o "$tmpdir/main.py"
     chmod +x "$tmpdir/install.sh"
     env LOGANALYT_CENTER_URL=$(python3 - <<'PYC'
 import json
@@ -241,3 +249,4 @@ echo "[log-analyt-agent] install ok"
 echo "install_dir=$INSTALL_DIR"
 echo "config=$CONFIG_DIR/config.json"
 echo "commands: laa (menu) | laa status | laa restart | laa logs | laa update | laa uninstall"
+echo "quick install: curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/install.sh -o install.sh && chmod +x install.sh && LOGANALYT_CENTER_URL=... LOGANALYT_SERVER_UUID=... LOGANALYT_AGENT_KEY=... ./install.sh"
