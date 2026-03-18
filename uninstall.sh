@@ -17,8 +17,12 @@ fi
 
 rm -rf "$INSTALL_DIR"
 rm -rf "$CONFIG_DIR"
+rm -f /usr/local/bin/laa
+rm -rf /tmp/log-analyt-agent
 
 echo "[log-analyt-agent] uninstall ok"
 echo "removed_service=${SERVICE_NAME}"
 echo "removed_install_dir=${INSTALL_DIR}"
 echo "removed_config_dir=${CONFIG_DIR}"
+echo "removed_shortcut=/usr/local/bin/laa"
+echo "removed_tmp_dir=/tmp/log-analyt-agent"
