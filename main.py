@@ -12,7 +12,7 @@ from pathlib import Path
 
 DEFAULT_CONFIG = "/etc/log-analyt-agent/config.json"
 STATE_PATH = "/opt/log-analyt-agent/state.json"
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 LOG_PATTERN = re.compile(r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"')
 
 
@@ -61,11 +61,11 @@ def heartbeat_payload(config: dict) -> dict:
 def load_state() -> dict:
     p = Path(STATE_PATH)
     if not p.exists():
-        return {}
+        return {"files": {}}
     try:
         return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
-        return {}
+        return {"files": {}}
 
 
 def save_state(state: dict) -> None:
@@ -109,9 +109,7 @@ def parse_nginx_line(line: str, log_file: str, source_type: str):
         "status_code": int(gd["status_code"]),
         "ua": gd["ua"],
         "ua_family": infer_ua_family(gd["ua"]),
-        "extra_json": {
-            "referer": gd.get("referer", "")
-        },
+        "extra_json": {"referer": gd.get("referer", "")},
     }
 
 
@@ -126,8 +124,8 @@ def collect_events(config: dict, state: dict) -> list:
         if not path.exists() or not path.is_file():
             continue
 
-        file_key = str(path)
-        prev_offset = int(files_state.get(file_key, 0))
+        key = str(path)
+        prev_offset = int(files_state.get(key, 0))
         current_size = path.stat().st_size
         if prev_offset > current_size:
             prev_offset = 0
@@ -135,11 +133,10 @@ def collect_events(config: dict, state: dict) -> list:
         with path.open("r", encoding="utf-8", errors="replace") as f:
             f.seek(prev_offset)
             for line in f:
-                parsed = parse_nginx_line(line, file_key, source_type)
+                parsed = parse_nginx_line(line, key, source_type)
                 if parsed:
                     events.append(parsed)
-            files_state[file_key] = f.tell()
-
+            files_state[key] = f.tell()
     return events
 
 
@@ -166,28 +163,23 @@ def run(config_path: str) -> int:
     while True:
         state = load_state()
         try:
-            response = post_json(heartbeat_url, heartbeat_payload(config))
-            print(f"[log-analyt-agent] heartbeat ok: {response}")
+            print(f"[log-analyt-agent] heartbeat ok: {post_json(heartbeat_url, heartbeat_payload(config))}")
         except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            print(f"[log-analyt-agent] heartbeat http_error status={e.code} body={body}", file=sys.stderr)
+            print(f"[log-analyt-agent] heartbeat http_error status={e.code} body={e.read().decode('utf-8', errors='replace')}", file=sys.stderr)
         except Exception as e:
             print(f"[log-analyt-agent] heartbeat failed: {e}", file=sys.stderr)
 
         events = collect_events(config, state)
         if events:
             try:
-                response = post_json(ingest_url, ingest_payload(config, events))
-                print(f"[log-analyt-agent] ingest ok: {response}")
+                print(f"[log-analyt-agent] ingest ok: {post_json(ingest_url, ingest_payload(config, events))}")
                 save_state(state)
             except urllib.error.HTTPError as e:
-                body = e.read().decode("utf-8", errors="replace")
-                print(f"[log-analyt-agent] ingest http_error status={e.code} body={body}", file=sys.stderr)
+                print(f"[log-analyt-agent] ingest http_error status={e.code} body={e.read().decode('utf-8', errors='replace')}", file=sys.stderr)
             except Exception as e:
                 print(f"[log-analyt-agent] ingest failed: {e}", file=sys.stderr)
         else:
             print("[log-analyt-agent] no new log events")
-
         time.sleep(interval)
 
 
