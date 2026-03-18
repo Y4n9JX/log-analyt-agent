@@ -146,17 +146,13 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 SCRIPT_SOURCE="$WORK_DIR/main.py"
-if [[ ! -f "$SCRIPT_SOURCE" ]]; then
-  echo "[log-analyt-agent] downloading main.py..."
-  curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/main.py -o "$SCRIPT_SOURCE"
-fi
+echo "[log-analyt-agent] downloading main.py..."
+curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/main.py -o "$SCRIPT_SOURCE"
 
 UNINSTALL_SOURCE="$WORK_DIR/uninstall.sh"
-if [[ ! -f "$UNINSTALL_SOURCE" ]]; then
-  echo "[log-analyt-agent] downloading uninstall.sh..."
-  curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/uninstall.sh -o "$UNINSTALL_SOURCE"
-  chmod +x "$UNINSTALL_SOURCE"
-fi
+echo "[log-analyt-agent] downloading uninstall.sh..."
+curl -fsSL https://raw.githubusercontent.com/Y4n9JX/log-analyt-agent/main/uninstall.sh -o "$UNINSTALL_SOURCE"
+chmod +x "$UNINSTALL_SOURCE"
 
 install -m 0755 "$SCRIPT_SOURCE" "$INSTALL_DIR/main.py"
 install -m 0755 "$UNINSTALL_SOURCE" "$INSTALL_DIR/uninstall.sh"
