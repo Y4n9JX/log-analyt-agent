@@ -67,24 +67,35 @@ set -euo pipefail
 show_menu() {
   while true; do
     clear
-    echo "=============================="
-    echo "   Log-Analyt Agent Manager"
-    echo "=============================="
-    echo "1) Status"
-    echo "2) Start"
-    echo "3) Stop"
-    echo "4) Restart"
-    echo "5) Logs"
-    echo "6) Uninstall"
-    echo "0) Exit"
+    echo "请选择操作："
     echo
-    read -rp "Select: " choice
+    echo "1. laa start"
+    echo "   启动 agent"
+    echo
+    echo "2. laa stop"
+    echo "   停止 agent"
+    echo
+    echo "3. laa restart"
+    echo "   重启 agent"
+    echo
+    echo "4. laa status"
+    echo "   看服务状态"
+    echo
+    echo "5. laa logs"
+    echo "   看最近日志"
+    echo
+    echo "6. laa uninstall"
+    echo "   卸载 agent"
+    echo
+    echo "0. 退出"
+    echo
+    read -rp "请输入编号: " choice
     case "$choice" in
-      1) systemctl status log-analyt-agent --no-pager; read -rp "Press Enter to continue..." ;;
-      2) systemctl start log-analyt-agent; echo "started"; read -rp "Press Enter to continue..." ;;
-      3) systemctl stop log-analyt-agent; echo "stopped"; read -rp "Press Enter to continue..." ;;
-      4) systemctl restart log-analyt-agent; echo "restarted"; read -rp "Press Enter to continue..." ;;
-      5) journalctl -u log-analyt-agent -n 100 --no-pager; read -rp "Press Enter to continue..." ;;
+      1) systemctl start log-analyt-agent; echo "已启动"; read -rp "按回车继续..." ;;
+      2) systemctl stop log-analyt-agent; echo "已停止"; read -rp "按回车继续..." ;;
+      3) systemctl restart log-analyt-agent; echo "已重启"; read -rp "按回车继续..." ;;
+      4) systemctl status log-analyt-agent --no-pager; read -rp "按回车继续..." ;;
+      5) journalctl -u log-analyt-agent -n 100 --no-pager; read -rp "按回车继续..." ;;
       6)
         if [[ -x /tmp/log-analyt-agent/uninstall.sh ]]; then
           /tmp/log-analyt-agent/uninstall.sh
@@ -97,7 +108,7 @@ show_menu() {
         exit 0
         ;;
       0) exit 0 ;;
-      *) echo "Invalid choice"; sleep 1 ;;
+      *) echo "无效选项"; sleep 1 ;;
     esac
   done
 }
