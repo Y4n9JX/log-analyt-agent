@@ -10,6 +10,69 @@ AGENT_KEY=${LOGANALYT_AGENT_KEY:-}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORK_DIR=${LOGANALYT_WORK_DIR:-/tmp/log-analyt-agent}
 
+bootstrap_if_needed() {
+  if [[ -n "$SERVER_UUID" && -n "$AGENT_KEY" ]]; then
+    return 0
+  fi
+
+  if [[ -z "$CENTER_URL" ]]; then
+    return 0
+  fi
+
+  echo "[log-analyt-agent] no server_uuid/agent_key provided, requesting bootstrap..."
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[log-analyt-agent] python3 is required for bootstrap response parsing"
+    exit 1
+  fi
+
+  HOSTNAME_VALUE=$(hostname 2>/dev/null || echo unknown)
+  OS_VALUE=$(uname -a 2>/dev/null || echo unknown)
+  BOOTSTRAP_URL="${CENTER_URL%/}/api/agent/bootstrap.php"
+  BOOTSTRAP_PAYLOAD=$(python3 - <<'PYC'
+import json, os
+print(json.dumps({
+    "hostname": os.environ.get("HOSTNAME_VALUE", "unknown"),
+    "os": os.environ.get("OS_VALUE", "unknown"),
+    "source_type": os.environ.get("LOGANALYT_SOURCE_TYPE", "nginx_access"),
+    "parser_name": os.environ.get("LOGANALYT_PARSER_NAME", "nginx_combined"),
+    "timezone": os.environ.get("LOGANALYT_TIMEZONE", "Asia/Shanghai"),
+    "agent_version": "0.1.0"
+}, ensure_ascii=False))
+PYC
+)
+
+  BOOTSTRAP_RESPONSE=$(HOSTNAME_VALUE="$HOSTNAME_VALUE" OS_VALUE="$OS_VALUE" curl -fsSL -X POST "$BOOTSTRAP_URL" -H "Content-Type: application/json" -d "$BOOTSTRAP_PAYLOAD") || {
+    echo "[log-analyt-agent] bootstrap request failed"
+    exit 1
+  }
+
+  eval "$(BOOTSTRAP_RESPONSE_JSON="$BOOTSTRAP_RESPONSE" python3 - <<'PYC'
+import json, os, shlex, sys
+raw = os.environ.get("BOOTSTRAP_RESPONSE_JSON", "")
+try:
+    data = json.loads(raw)
+except Exception as e:
+    print(f'echo "[log-analyt-agent] invalid bootstrap response: {shlex.quote(str(e))}" >&2')
+    print('exit 1')
+    sys.exit(0)
+if not data.get("ok"):
+    print(f'echo "[log-analyt-agent] bootstrap failed: {shlex.quote(str(data))}" >&2')
+    print('exit 1')
+    sys.exit(0)
+print('SERVER_UUID=' + shlex.quote(data.get('server_uuid', '')))
+print('AGENT_KEY=' + shlex.quote(data.get('agent_key', '')))
+PYC
+)"
+
+  if [[ -z "$SERVER_UUID" || -z "$AGENT_KEY" ]]; then
+    echo "[log-analyt-agent] bootstrap did not return credentials"
+    exit 1
+  fi
+
+  echo "[log-analyt-agent] bootstrap ok: server_uuid=$SERVER_UUID"
+}
+
 prompt_if_missing() {
   local interactive=0
   local force_non_interactive=${LOGANALYT_NON_INTERACTIVE:-0}
@@ -20,11 +83,11 @@ prompt_if_missing() {
   fi
   if [[ -z "$SERVER_UUID" ]]; then
     interactive=1
-    read -rp "请输入 server_uuid: " SERVER_UUID
+    read -rp "请输入 server_uuid（留空则自动申请）: " SERVER_UUID
   fi
   if [[ -z "$AGENT_KEY" ]]; then
     interactive=1
-    read -rp "请输入 agent_key: " AGENT_KEY
+    read -rp "请输入 agent_key（留空则自动申请）: " AGENT_KEY
   fi
 
   if [[ "$interactive" -eq 1 && "$force_non_interactive" != "1" ]]; then
@@ -57,6 +120,7 @@ done
 
 mkdir -p "$WORK_DIR" "$INSTALL_DIR" "$CONFIG_DIR"
 prompt_if_missing
+bootstrap_if_needed
 
 if [[ -z "$CENTER_URL" || -z "$SERVER_UUID" || -z "$AGENT_KEY" ]]; then
   echo "[log-analyt-agent] missing required values"
