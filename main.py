@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import os
 import platform
 import re
 import socket
@@ -13,7 +12,7 @@ from pathlib import Path
 
 DEFAULT_CONFIG = "/etc/log-analyt-agent/config.json"
 STATE_PATH = "/opt/log-analyt-agent/state.json"
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 METRICS_WINDOW_SECONDS = 180
 LOG_PATTERN = re.compile(r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"')
 
@@ -162,11 +161,10 @@ def capture_metrics(state: dict):
     metrics.append(current)
     cutoff = now_ts - METRICS_WINDOW_SECONDS
     state["metrics"] = [item for item in metrics if int(item.get("ts", 0)) >= cutoff]
-    averaged = {
+    return {
         "cpu_percent": average_metric(state["metrics"], "cpu_percent"),
         "memory_percent": average_metric(state["metrics"], "memory_percent"),
     }
-    return averaged
 
 
 def heartbeat_payload(config: dict, metrics_avg: dict) -> dict:
@@ -261,6 +259,27 @@ def ingest_payload(config: dict, events: list) -> dict:
         "agent_key": config["agent_key"],
         "events": events,
     }
+
+
+def merge_watch_paths(config_path: str, config: dict, desired_watch: list):
+    if not isinstance(desired_watch, list):
+        return config
+    current_watch = config.get("watch", [])
+    if not isinstance(current_watch, list):
+        current_watch = []
+    merged = []
+    seen = set()
+    for item in current_watch + desired_watch:
+        item = str(item).strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        merged.append(item)
+    if merged != current_watch:
+        config["watch"] = merged
+        save_config(config_path, config)
+        print(f"[log-analyt-agent] watch updated: {merged}")
+    return config
 
 
 def run(config_path: str) -> int:
