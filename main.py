@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import os
 import platform
 import re
 import socket
@@ -13,12 +12,8 @@ from pathlib import Path
 
 DEFAULT_CONFIG = "/etc/log-analyt-agent/config.json"
 STATE_PATH = "/opt/log-analyt-agent/state.json"
-VERSION = "0.1.0"
-LOG_PATTERN = re.compile(
-    r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] '
-    r'"(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" '
-    r'(?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"'
-)
+VERSION = "0.1.1"
+LOG_PATTERN = re.compile(r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"')
 
 
 def load_config(path: str) -> dict:
@@ -99,7 +94,7 @@ def infer_ua_family(ua: str) -> str:
     return "Other"
 
 
-def parse_nginx_line(line: str, log_file: str, source_type: str) -> dict | None:
+def parse_nginx_line(line: str, log_file: str, source_type: str):
     m = LOG_PATTERN.match(line.strip())
     if not m:
         return None
@@ -115,7 +110,7 @@ def parse_nginx_line(line: str, log_file: str, source_type: str) -> dict | None:
         "ua": gd["ua"],
         "ua_family": infer_ua_family(gd["ua"]),
         "extra_json": {
-            "referer": gd.get("referer", ""),
+            "referer": gd.get("referer", "")
         },
     }
 
@@ -170,9 +165,8 @@ def run(config_path: str) -> int:
 
     while True:
         state = load_state()
-        payload = heartbeat_payload(config)
         try:
-            response = post_json(heartbeat_url, payload)
+            response = post_json(heartbeat_url, heartbeat_payload(config))
             print(f"[log-analyt-agent] heartbeat ok: {response}")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
