@@ -12,7 +12,7 @@ from pathlib import Path
 
 DEFAULT_CONFIG = "/etc/log-analyt-agent/config.json"
 STATE_PATH = "/opt/log-analyt-agent/state.json"
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 LOG_PATTERN = re.compile(r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"')
 
 
@@ -45,6 +45,61 @@ def post_json(url: str, payload: dict, timeout: int = 10) -> dict:
         return json.loads(body) if body else {"ok": True}
 
 
+def read_uptime_seconds():
+    try:
+        with open('/proc/uptime', 'r', encoding='utf-8') as f:
+            return int(float(f.read().split()[0]))
+    except Exception:
+        return None
+
+
+def read_memory_percent():
+    try:
+        values = {}
+        with open('/proc/meminfo', 'r', encoding='utf-8') as f:
+            for line in f:
+                key, value = line.split(':', 1)
+                values[key] = int(value.strip().split()[0])
+        total = values.get('MemTotal', 0)
+        available = values.get('MemAvailable', values.get('MemFree', 0))
+        if total <= 0:
+            return None
+        used_percent = (1 - (available / total)) * 100
+        return round(max(0.0, min(100.0, used_percent)), 1)
+    except Exception:
+        return None
+
+
+def read_cpu_snapshot():
+    try:
+        with open('/proc/stat', 'r', encoding='utf-8') as f:
+            parts = f.readline().split()
+        if not parts or parts[0] != 'cpu':
+            return None
+        values = [int(x) for x in parts[1:]]
+        idle = values[3] + (values[4] if len(values) > 4 else 0)
+        total = sum(values)
+        return total, idle
+    except Exception:
+        return None
+
+
+def read_cpu_percent(sample_seconds: float = 0.2):
+    first = read_cpu_snapshot()
+    if not first:
+        return None
+    time.sleep(sample_seconds)
+    second = read_cpu_snapshot()
+    if not second:
+        return None
+    total_delta = second[0] - first[0]
+    idle_delta = second[1] - first[1]
+    if total_delta <= 0:
+        return None
+    used_percent = (1 - (idle_delta / total_delta)) * 100
+    return round(max(0.0, min(100.0, used_percent)), 1)
+
+
 def heartbeat_payload(config: dict) -> dict:
     return {
         "server_uuid": config["server_uuid"],
@@ -54,6 +109,9 @@ def heartbeat_payload(config: dict) -> dict:
         "os": platform.platform(),
         "source_type": config.get("source_type", "nginx_access"),
         "parser_name": config.get("parser_name", "nginx_combined"),
+        "uptime_seconds": read_uptime_seconds(),
+        "cpu_percent": read_cpu_percent(),
+        "memory_percent": read_memory_percent(),
         "sent_at": now_iso(),
     }
 
