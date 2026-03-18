@@ -60,6 +60,34 @@ exec /usr/bin/env python3 /opt/log-analyt-agent/main.py "$CONFIG_PATH"
 EOF
 chmod +x "$INSTALL_DIR/agent.sh"
 
+cat > /usr/local/bin/laa <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cmd=${1:-status}
+case "$cmd" in
+  start) systemctl start log-analyt-agent ;;
+  stop) systemctl stop log-analyt-agent ;;
+  restart) systemctl restart log-analyt-agent ;;
+  status) systemctl status log-analyt-agent --no-pager ;;
+  logs) journalctl -u log-analyt-agent -n 100 --no-pager ;;
+  uninstall)
+    if [[ -x /tmp/log-analyt-agent/uninstall.sh ]]; then
+      /tmp/log-analyt-agent/uninstall.sh
+    elif [[ -x ./uninstall.sh ]]; then
+      ./uninstall.sh
+    else
+      echo "uninstall.sh not found; download it from log-analyt-agent repo" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "Usage: laa {start|stop|restart|status|logs|uninstall}" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/laa
+
 if command -v systemctl >/dev/null 2>&1; then
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
 [Unit]
@@ -87,3 +115,4 @@ fi
 echo "[log-analyt-agent] install ok"
 echo "install_dir=$INSTALL_DIR"
 echo "config=$CONFIG_DIR/config.json"
+echo "commands: laa status | laa restart | laa logs | laa uninstall"
