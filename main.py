@@ -12,8 +12,9 @@ from pathlib import Path
 
 DEFAULT_CONFIG = "/etc/log-analyt-agent/config.json"
 STATE_PATH = "/opt/log-analyt-agent/state.json"
-VERSION = "0.2.4"
+VERSION = "0.2.5"
 METRICS_WINDOW_SECONDS = 180
+ROTATE_SCAN_LIMIT = 5
 LOG_PATTERN = re.compile(r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"')
 
 
@@ -207,6 +208,63 @@ def infer_ua_family(ua: str) -> str:
     return "Other"
 
 
+def file_identity(path: Path):
+    stat = path.stat()
+    return {
+        "inode": getattr(stat, "st_ino", None),
+        "size": stat.st_size,
+        "mtime": int(stat.st_mtime),
+    }
+
+
+def parse_file_from_offset(path: Path, start_offset: int, source_type: str):
+    events = []
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        f.seek(max(0, start_offset))
+        for line in f:
+            parsed = parse_nginx_line(line, str(path), source_type)
+            if parsed:
+                events.append(parsed)
+        end_offset = f.tell()
+    return events, end_offset
+
+
+def find_rotated_match(path: Path, inode):
+    parent = path.parent
+    if not parent.exists():
+        return None
+    prefix = path.name + "."
+    checked = 0
+    for candidate in sorted(parent.glob(path.name + '.*')):
+        try:
+            if not candidate.is_file():
+                continue
+            if not candidate.name.startswith(prefix):
+                continue
+            checked += 1
+            if checked > ROTATE_SCAN_LIMIT:
+                break
+            if getattr(candidate.stat(), 'st_ino', None) == inode:
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
+def normalize_file_state(files_state: dict, key: str, path: Path):
+    entry = files_state.get(key)
+    if isinstance(entry, int):
+        entry = {"offset": entry, "inode": None, "size": None, "mtime": None}
+    elif not isinstance(entry, dict):
+        entry = {"offset": 0, "inode": None, "size": None, "mtime": None}
+    entry.setdefault("offset", 0)
+    entry.setdefault("inode", None)
+    entry.setdefault("size", None)
+    entry.setdefault("mtime", None)
+    files_state[key] = entry
+    return entry
+
+
 def parse_nginx_line(line: str, log_file: str, source_type: str):
     m = LOG_PATTERN.match(line.strip())
     if not m:
@@ -242,22 +300,40 @@ def collect_events(config: dict, state: dict) -> list:
             continue
 
         key = str(path)
-        current_size = path.stat().st_size
+        current = file_identity(path)
+
         if key not in files_state:
-            files_state[key] = current_size
+            files_state[key] = {
+                "offset": current["size"],
+                "inode": current["inode"],
+                "size": current["size"],
+                "mtime": current["mtime"],
+            }
             continue
 
-        prev_offset = int(files_state.get(key, 0))
-        if prev_offset > current_size:
+        entry = normalize_file_state(files_state, key, path)
+        prev_offset = int(entry.get("offset") or 0)
+        prev_inode = entry.get("inode")
+        current_inode = current["inode"]
+        current_size = current["size"]
+
+        if prev_inode is not None and prev_inode != current_inode:
+            rotated = find_rotated_match(path, prev_inode)
+            if rotated is not None:
+                rotate_events, rotated_end = parse_file_from_offset(rotated, prev_offset, source_type)
+                events.extend(rotate_events)
+            prev_offset = 0
+        elif prev_offset > current_size:
             prev_offset = 0
 
-        with path.open("r", encoding="utf-8", errors="replace") as f:
-            f.seek(prev_offset)
-            for line in f:
-                parsed = parse_nginx_line(line, key, source_type)
-                if parsed:
-                    events.append(parsed)
-            files_state[key] = f.tell()
+        new_events, end_offset = parse_file_from_offset(path, prev_offset, source_type)
+        events.extend(new_events)
+        files_state[key] = {
+            "offset": end_offset,
+            "inode": current_inode,
+            "size": current_size,
+            "mtime": current["mtime"],
+        }
     return events
 
 
