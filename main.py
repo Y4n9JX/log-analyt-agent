@@ -12,9 +12,12 @@ from pathlib import Path
 
 DEFAULT_CONFIG = "/etc/log-analyt-agent/config.json"
 STATE_PATH = "/opt/log-analyt-agent/state.json"
-VERSION = "0.2.5"
+VERSION = "0.2.6"
 METRICS_WINDOW_SECONDS = 180
 ROTATE_SCAN_LIMIT = 5
+DEFAULT_MAX_RETRIES = 5
+DEFAULT_BACKOFF_SECONDS = 15
+DEFAULT_MAX_QUEUE_SIZE = 2000
 LOG_PATTERN = re.compile(r'(?P<source_ip>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status_code>\d{3}) \S+ "(?P<referer>[^"]*)" "(?P<ua>[^"]*)"')
 
 
@@ -126,16 +129,17 @@ def read_cpu_percent(sample_seconds: float = 0.2):
 def load_state() -> dict:
     p = Path(STATE_PATH)
     if not p.exists():
-        return {"files": {}, "metrics": []}
+        return {"files": {}, "metrics": [], "queue": []}
     try:
         state = json.loads(p.read_text(encoding="utf-8"))
         if not isinstance(state, dict):
-            return {"files": {}, "metrics": []}
+            return {"files": {}, "metrics": [], "queue": []}
         state.setdefault("files", {})
         state.setdefault("metrics", [])
+        state.setdefault("queue", [])
         return state
     except Exception:
-        return {"files": {}, "metrics": []}
+        return {"files": {}, "metrics": [], "queue": []}
 
 
 def save_state(state: dict) -> None:
@@ -337,6 +341,82 @@ def collect_events(config: dict, state: dict) -> list:
     return events
 
 
+def queue_config(config: dict) -> dict:
+    return {
+        "max_retries": int(config.get("max_retries", DEFAULT_MAX_RETRIES)),
+        "backoff_seconds": int(config.get("backoff_seconds", DEFAULT_BACKOFF_SECONDS)),
+        "max_queue_size": int(config.get("max_queue_size", DEFAULT_MAX_QUEUE_SIZE)),
+    }
+
+
+def queue_stats(state: dict) -> dict:
+    queue = state.setdefault("queue", [])
+    pending_events = sum(len(item.get("events", [])) for item in queue)
+    return {
+        "pending_batches": len(queue),
+        "pending_events": pending_events,
+    }
+
+
+def enqueue_events(state: dict, events: list, now_ts: int, qcfg: dict) -> None:
+    if not events:
+        return
+    queue = state.setdefault("queue", [])
+    queue.append({
+        "events": events,
+        "retry_count": 0,
+        "next_retry_at": now_ts,
+        "created_at": now_ts,
+        "last_error": None,
+    })
+    max_queue_size = max(1, qcfg.get("max_queue_size", DEFAULT_MAX_QUEUE_SIZE))
+    while sum(len(item.get("events", [])) for item in queue) > max_queue_size and queue:
+        dropped = queue.pop(0)
+        dropped_count = len(dropped.get("events", []))
+        print(f"[log-analyt-agent] queue overflow: dropped oldest batch events={dropped_count}", file=sys.stderr)
+
+
+def send_queue(config: dict, state: dict, ingest_url: str) -> None:
+    queue = state.setdefault("queue", [])
+    qcfg = queue_config(config)
+    now_ts = int(time.time())
+    remaining = []
+    for item in queue:
+        events = item.get("events") or []
+        retry_count = int(item.get("retry_count", 0))
+        next_retry_at = int(item.get("next_retry_at", 0))
+        if not events:
+            continue
+        if next_retry_at > now_ts:
+            remaining.append(item)
+            continue
+        try:
+            resp = post_json(ingest_url, ingest_payload(config, events))
+            print(f"[log-analyt-agent] ingest ok: {resp}")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode('utf-8', errors='replace')
+            retry_count += 1
+            item["retry_count"] = retry_count
+            item["last_error"] = f"http_{e.code}: {body}"
+            if retry_count > qcfg["max_retries"]:
+                print(f"[log-analyt-agent] drop batch after retries={retry_count} error={item['last_error']}", file=sys.stderr)
+                continue
+            item["next_retry_at"] = now_ts + qcfg["backoff_seconds"] * retry_count
+            remaining.append(item)
+            print(f"[log-analyt-agent] ingest http_error retry={retry_count} next_retry_at={item['next_retry_at']} body={body}", file=sys.stderr)
+        except Exception as e:
+            retry_count += 1
+            item["retry_count"] = retry_count
+            item["last_error"] = str(e)
+            if retry_count > qcfg["max_retries"]:
+                print(f"[log-analyt-agent] drop batch after retries={retry_count} error={item['last_error']}", file=sys.stderr)
+                continue
+            item["next_retry_at"] = now_ts + qcfg["backoff_seconds"] * retry_count
+            remaining.append(item)
+            print(f"[log-analyt-agent] ingest failed retry={retry_count} next_retry_at={item['next_retry_at']} error={e}", file=sys.stderr)
+    state["queue"] = remaining
+
+
 def ingest_payload(config: dict, events: list) -> dict:
     return {
         "server_uuid": config["server_uuid"],
@@ -394,15 +474,13 @@ def run(config_path: str) -> int:
 
         events = collect_events(config, state)
         if events:
-            try:
-                print(f"[log-analyt-agent] ingest ok: {post_json(ingest_url, ingest_payload(config, events))}")
-                save_state(state)
-            except urllib.error.HTTPError as e:
-                print(f"[log-analyt-agent] ingest http_error status={e.code} body={e.read().decode('utf-8', errors='replace')}", file=sys.stderr)
-            except Exception as e:
-                print(f"[log-analyt-agent] ingest failed: {e}", file=sys.stderr)
+            enqueue_events(state, events, int(time.time()), queue_config(config))
         else:
             print("[log-analyt-agent] no new log events")
+
+        send_queue(config, state, ingest_url)
+        print(f"[log-analyt-agent] queue stats: {queue_stats(state)}")
+        save_state(state)
         time.sleep(interval)
 
 
