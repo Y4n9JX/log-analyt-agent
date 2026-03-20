@@ -9,6 +9,14 @@ SERVER_UUID=${LOGANALYT_SERVER_UUID:-}
 AGENT_KEY=${LOGANALYT_AGENT_KEY:-}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORK_DIR=${LOGANALYT_WORK_DIR:-/tmp/log-analyt-agent}
+AGENT_VERSION=$(python3 - <<'PYC'
+from pathlib import Path
+import re
+text = Path('main.py').read_text(encoding='utf-8')
+match = re.search(r'^VERSION\s*=\s*["\']([^"\']+)["\']', text, re.M)
+print(match.group(1) if match else '0.1.0')
+PYC
+)
 
 bootstrap_if_needed() {
   if [[ -n "$SERVER_UUID" && -n "$AGENT_KEY" ]]; then
@@ -29,7 +37,7 @@ bootstrap_if_needed() {
   HOSTNAME_VALUE=$(hostname 2>/dev/null || echo unknown)
   OS_VALUE=$(uname -a 2>/dev/null || echo unknown)
   BOOTSTRAP_URL="${CENTER_URL%/}/api/agent/bootstrap.php"
-  BOOTSTRAP_PAYLOAD=$(python3 - <<'PYC'
+  BOOTSTRAP_PAYLOAD=$(HOSTNAME_VALUE="$HOSTNAME_VALUE" OS_VALUE="$OS_VALUE" AGENT_VERSION="$AGENT_VERSION" python3 - <<'PYC'
 import json, os
 print(json.dumps({
     "hostname": os.environ.get("HOSTNAME_VALUE", "unknown"),
@@ -37,12 +45,12 @@ print(json.dumps({
     "source_type": os.environ.get("LOGANALYT_SOURCE_TYPE", "nginx_access"),
     "parser_name": os.environ.get("LOGANALYT_PARSER_NAME", "nginx_combined"),
     "timezone": os.environ.get("LOGANALYT_TIMEZONE", "Asia/Shanghai"),
-    "agent_version": "0.1.0"
+    "agent_version": os.environ.get("AGENT_VERSION", "0.1.0")
 }, ensure_ascii=False))
 PYC
 )
 
-  BOOTSTRAP_RESPONSE=$(HOSTNAME_VALUE="$HOSTNAME_VALUE" OS_VALUE="$OS_VALUE" curl -fsSL -X POST "$BOOTSTRAP_URL" -H "Content-Type: application/json" -d "$BOOTSTRAP_PAYLOAD") || {
+  BOOTSTRAP_RESPONSE=$(curl -fsSL -X POST "$BOOTSTRAP_URL" -H "Content-Type: application/json" -d "$BOOTSTRAP_PAYLOAD") || {
     echo "[log-analyt-agent] bootstrap request failed"
     exit 1
   }
