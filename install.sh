@@ -76,27 +76,37 @@ PYC
 prompt_if_missing() {
   local interactive=0
   local force_non_interactive=${LOGANALYT_NON_INTERACTIVE:-0}
+  local input_fd="/dev/tty"
+
+  if [[ "$force_non_interactive" == "1" ]]; then
+    return 0
+  fi
+
+  if [[ ! -r "$input_fd" ]]; then
+    echo "[log-analyt-agent] non-interactive shell detected; skipping prompts"
+    return 0
+  fi
 
   if [[ -z "$CENTER_URL" ]]; then
     interactive=1
-    read -rp "请输入中心站地址 (如 https://your-domain.example): " CENTER_URL
+    read -r -p "请输入中心站地址 (如 https://your-domain.example): " CENTER_URL < "$input_fd"
   fi
   if [[ -z "$SERVER_UUID" ]]; then
     interactive=1
-    read -rp "请输入 server_uuid（留空则自动申请）: " SERVER_UUID
+    read -r -p "请输入 server_uuid（留空则自动申请）: " SERVER_UUID < "$input_fd"
   fi
   if [[ -z "$AGENT_KEY" ]]; then
     interactive=1
-    read -rp "请输入 agent_key（留空则自动申请）: " AGENT_KEY
+    read -r -p "请输入 agent_key（留空则自动申请）: " AGENT_KEY < "$input_fd"
   fi
 
-  if [[ "$interactive" -eq 1 && "$force_non_interactive" != "1" ]]; then
+  if [[ "$interactive" -eq 1 ]]; then
     echo
     echo "安装信息确认："
     echo "- center_url: $CENTER_URL"
     echo "- server_uuid: $SERVER_UUID"
     echo "- agent_key: $AGENT_KEY"
-    read -rp "是否继续安装？[Y/n]: " confirm
+    read -r -p "是否继续安装？[Y/n]: " confirm < "$input_fd"
     confirm=${confirm:-Y}
     case "$confirm" in
       Y|y|yes|YES) ;;
